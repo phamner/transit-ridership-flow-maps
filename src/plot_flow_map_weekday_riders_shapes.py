@@ -18,7 +18,18 @@ MIN_LINE_WIDTH = 0.9
 DEFAULT_MAX_LINE_WIDTH = 12.0
 AGENCY_MAX_LINE_WIDTH = {
     "bart": 18.0,
-    "mta_subway": 8.0,
+    "mta_subway": 3.5,
+}
+
+AGENCY_MANHATTAN_MAX_LINE_WIDTH = {
+    "mta_subway": 4.5,
+}
+
+MANHATTAN_BOUNDS = {
+    "lon_min": -74.03,
+    "lon_max": -73.90,
+    "lat_min": 40.70,
+    "lat_max": 40.88,
 }
 
 
@@ -256,6 +267,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--edge-riders", help="Optional path to edge_riders_weekday_YYYYMM.csv")
     parser.add_argument("--od-long", help="Optional path to od_long_YYYYMM.csv")
     parser.add_argument("--crosswalk", help="Optional path to station_code_crosswalk_YYYYMM.csv")
+    parser.add_argument(
+        "--manhattan-only",
+        action="store_true",
+        help="Render an additional Manhattan-only MTA map view with a dedicated output filename.",
+    )
+    parser.add_argument(
+        "--manhattan-max-line-width",
+        type=float,
+        help="Optional max thickness override applied only when --manhattan-only is enabled.",
+    )
     return parser.parse_args()
 
 
@@ -277,7 +298,6 @@ def _period_label(period_code: str) -> str:
 def main() -> None:
     args = parse_args()
     cfg = get_agency_config(args.agency)
-    max_line_width = AGENCY_MAX_LINE_WIDTH.get(cfg.agency_id, DEFAULT_MAX_LINE_WIDTH)
 
     if args.period:
         period_code = args.period
@@ -311,6 +331,20 @@ def main() -> None:
         index=False,
     )
 
+    manhattan_only = bool(args.manhattan_only and cfg.agency_id == "mta_subway")
+    if args.manhattan_only and cfg.agency_id != "mta_subway":
+        print("Ignoring --manhattan-only because agency is not mta_subway.")
+
+    base_max_line_width = AGENCY_MAX_LINE_WIDTH.get(cfg.agency_id, DEFAULT_MAX_LINE_WIDTH)
+    manhattan_default_max_line_width = AGENCY_MANHATTAN_MAX_LINE_WIDTH.get(cfg.agency_id, base_max_line_width)
+    if manhattan_only:
+        if args.manhattan_max_line_width is not None:
+            max_line_width = float(args.manhattan_max_line_width)
+        else:
+            max_line_width = manhattan_default_max_line_width
+    else:
+        max_line_width = base_max_line_width
+
     ordered_segments = segments.sort_values("riders_weekday", ascending=True).reset_index(drop=True)
     widths = [
         width_for_value(value, RIDERS_SCALE_MIN, RIDERS_SCALE_MAX, max_width=max_line_width)
@@ -333,6 +367,23 @@ def main() -> None:
         agency_display_name=cfg.display_name,
     )
 
+    if manhattan_only:
+        station_mask = (
+            (stations["stop_lon"] >= MANHATTAN_BOUNDS["lon_min"])
+            & (stations["stop_lon"] <= MANHATTAN_BOUNDS["lon_max"])
+            & (stations["stop_lat"] >= MANHATTAN_BOUNDS["lat_min"])
+            & (stations["stop_lat"] <= MANHATTAN_BOUNDS["lat_max"])
+        )
+        stations_in_view = stations[station_mask].copy()
+        manhattan_station_ids = set(stations_in_view["station_id"].astype(str).tolist())
+        ordered_segments_to_plot = ordered_segments[
+            ordered_segments["from_station_id"].astype(str).isin(manhattan_station_ids)
+            & ordered_segments["to_station_id"].astype(str).isin(manhattan_station_ids)
+        ].copy()
+    else:
+        stations_in_view = stations.copy()
+        ordered_segments_to_plot = ordered_segments.copy()
+
     fig, ax = plt.subplots(figsize=(13.5, 13.5), dpi=300)
 
     ax.set_facecolor("#f7f7f5")
@@ -340,7 +391,28 @@ def main() -> None:
 
     shape_lookup = {shape_id: frame.copy() for shape_id, frame in shapes.groupby("shape_id")}
 
-    for segment, width in zip(ordered_segments.itertuples(index=False), widths):
+    widths_by_segment = {
+        (
+            row.shape_id,
+            row.from_station_id,
+            row.to_station_id,
+            int(row.start_idx),
+            int(row.end_idx),
+        ): width
+        for row, width in zip(ordered_segments.itertuples(index=False), widths)
+    }
+
+    for segment in ordered_segments_to_plot.itertuples(index=False):
+        width = widths_by_segment.get(
+            (
+                segment.shape_id,
+                segment.from_station_id,
+                segment.to_station_id,
+                int(segment.start_idx),
+                int(segment.end_idx),
+            ),
+            MIN_LINE_WIDTH,
+        )
         shape_points = shape_lookup.get(segment.shape_id)
         if shape_points is None or shape_points.empty:
             continue
@@ -360,8 +432,8 @@ def main() -> None:
         )
 
     ax.scatter(
-        stations["stop_lon"],
-        stations["stop_lat"],
+        stations_in_view["stop_lon"],
+        stations_in_view["stop_lat"],
         s=20,
         color="#f1faee",
         edgecolor=line_color,
@@ -370,7 +442,7 @@ def main() -> None:
     )
 
     if cfg.agency_id == "bart":
-        labeled_stations = stations[stations["weekday_station_ridership"] > 0].copy()
+        labeled_stations = stations_in_view[stations_in_view["weekday_station_ridership"] > 0].copy()
         for station in labeled_stations.itertuples(index=False):
             station_name = str(station.station_name).strip().lower()
             label_offset = (8, -8) if station_name in {
@@ -410,17 +482,24 @@ def main() -> None:
                 zorder=4,
             )
 
+    title_suffix = " (Manhattan only)" if manhattan_only else ""
     ax.set_title(
-        f"{cfg.display_name} Weekday Rider Flow on GTFS Shapes\n"
+        f"{cfg.display_name} Weekday Rider Flow on GTFS Shapes{title_suffix}\n"
         f"(Edge width = modeled weekday OD riders per segment, {period_label})",
         fontsize=15,
         pad=14,
     )
 
-    lon_min = float(shapes["shape_pt_lon"].min())
-    lon_max = float(shapes["shape_pt_lon"].max())
-    lat_min = float(shapes["shape_pt_lat"].min())
-    lat_max = float(shapes["shape_pt_lat"].max())
+    if manhattan_only:
+        lon_min = MANHATTAN_BOUNDS["lon_min"]
+        lon_max = MANHATTAN_BOUNDS["lon_max"]
+        lat_min = MANHATTAN_BOUNDS["lat_min"]
+        lat_max = MANHATTAN_BOUNDS["lat_max"]
+    else:
+        lon_min = float(shapes["shape_pt_lon"].min())
+        lon_max = float(shapes["shape_pt_lon"].max())
+        lat_min = float(shapes["shape_pt_lat"].min())
+        lat_max = float(shapes["shape_pt_lat"].max())
     lon_pad = (lon_max - lon_min) * 0.007
     lat_pad = (lat_max - lat_min) * 0.007
 
@@ -491,7 +570,8 @@ def main() -> None:
     fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.94)
 
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = cfg.output_dir / "flow_map_weekday_riders_shapes.png"
+    output_filename = "flow_map_weekday_riders_shapes_manhattan.png" if manhattan_only else "flow_map_weekday_riders_shapes.png"
+    output_path = cfg.output_dir / output_filename
     plt.savefig(output_path, dpi=300)
     plt.close(fig)
 
@@ -499,7 +579,7 @@ def main() -> None:
     print(f"Saved station table to {table_output_path}")
     print(f"Saved segment table to {segment_output_path}")
     print(f"Saved station ridership table to {station_totals_output_path}")
-    print(f"Rendered {segments['shape_id'].nunique()} unique shapes and {len(segments)} segments")
+    print(f"Rendered {ordered_segments_to_plot['shape_id'].nunique()} unique shapes and {len(ordered_segments_to_plot)} segments")
 
 
 if __name__ == "__main__":
