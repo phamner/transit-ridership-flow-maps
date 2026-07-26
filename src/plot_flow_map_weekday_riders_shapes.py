@@ -282,7 +282,7 @@ def main() -> None:
 
     table_output_path = render_station_table_figure(station_table)
 
-    fig, ax = plt.subplots(figsize=(16, 18), dpi=300)
+    fig, ax = plt.subplots(figsize=(13.5, 13.5), dpi=300)
 
     ax.set_facecolor("#f7f7f5")
     fig.patch.set_facecolor("#f7f7f5")
@@ -359,8 +359,17 @@ def main() -> None:
         )
 
     ax.set_title("BART Weekday Rider Flow on GTFS Shapes\n(Edge width = assigned weekday riders)", fontsize=15, pad=14)
-    ax.set_aspect("equal", adjustable="datalim")
-    ax.margins(x=0.02, y=0.02)
+
+    lon_min = float(shapes["shape_pt_lon"].min())
+    lon_max = float(shapes["shape_pt_lon"].max())
+    lat_min = float(shapes["shape_pt_lat"].min())
+    lat_max = float(shapes["shape_pt_lat"].max())
+    lon_pad = (lon_max - lon_min) * 0.007
+    lat_pad = (lat_max - lat_min) * 0.007
+
+    ax.set_xlim(lon_min - lon_pad, lon_max + lon_pad)
+    ax.set_ylim(lat_min - lat_pad, lat_max + lat_pad)
+    ax.set_aspect("equal", adjustable="box")
     ax.set_xticks([])
     ax.set_yticks([])
     for spine in ax.spines.values():
@@ -369,7 +378,7 @@ def main() -> None:
     min_riders = RIDERS_SCALE_MIN
     max_riders = RIDERS_SCALE_MAX
 
-    legend_ax = ax.inset_axes([0.02, 0.03, 0.30, 0.20])
+    legend_ax = ax.inset_axes([0.03, 0.03, 0.38, 0.24])
     legend_ax.set_facecolor((0.97, 0.97, 0.96, 0.96))
     legend_ax.set_xlim(0, 1)
     legend_ax.set_ylim(0, 1)
@@ -380,12 +389,12 @@ def main() -> None:
         spine.set_edgecolor("#d9d9d6")
         spine.set_linewidth(0.8)
 
-    legend_ax.text(0.05, 0.9, "Ridership scale", fontsize=10.0, fontweight="bold", color="#10263b")
-    legend_ax.text(0.05, 0.79, "Average weekday riders per segment", fontsize=8.2, color="#3b4a59")
+    legend_ax.text(0.05, 0.9, "Ridership scale", fontsize=11.5, fontweight="bold", color="#10263b")
+    legend_ax.text(0.05, 0.79, "Average weekday riders per segment", fontsize=9.4, color="#3b4a59")
 
     x_start = 0.07
-    x_end = 0.72
-    y_center = 0.44
+    x_end = 0.80
+    y_center = 0.43
 
     # Draw a single scale line that smoothly increases in thickness.
     n_segments = 80
@@ -402,20 +411,20 @@ def main() -> None:
     for fraction in label_fractions:
         x_label = x_start + (x_end - x_start) * fraction
         riders_value = min_riders + (max_riders - min_riders) * fraction
-        legend_ax.plot([x_label, x_label], [0.58, 0.64], color="#526273", linewidth=0.7)
+        legend_ax.plot([x_label, x_label], [0.58, 0.66], color="#526273", linewidth=0.9)
         legend_ax.text(
             x_label,
-            0.67,
+            0.69,
             f"{int(round(riders_value / 1000.0)):d}k",
             ha="center",
             va="bottom",
-            fontsize=7.4,
+            fontsize=8.4,
             color="#10263b",
         )
 
-    legend_ax.text(0.05, 0.11, "From 0 to 150k riders", fontsize=7.8, color="#526273")
+    legend_ax.text(0.05, 0.11, "From 0 to 150k riders", fontsize=8.6, color="#526273")
 
-    fig.subplots_adjust(left=0.015, right=0.985, bottom=0.015, top=0.93)
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.94)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "flow_map_weekday_riders_shapes.png"
