@@ -15,10 +15,14 @@ LINE_ALPHA = 1.0
 RIDERS_SCALE_MIN = 0.0
 RIDERS_SCALE_MAX = 150000.0
 MIN_LINE_WIDTH = 0.9
-MAX_LINE_WIDTH = 12.0
+DEFAULT_MAX_LINE_WIDTH = 12.0
+AGENCY_MAX_LINE_WIDTH = {
+    "bart": 18.0,
+    "mta_subway": 8.0,
+}
 
 
-def width_scale(values, min_width: float = MIN_LINE_WIDTH, max_width: float = MAX_LINE_WIDTH):
+def width_scale(values, min_width: float = MIN_LINE_WIDTH, max_width: float = DEFAULT_MAX_LINE_WIDTH):
     min_value = values.min()
     max_value = values.max()
 
@@ -36,7 +40,7 @@ def width_for_value(
     min_value: float,
     max_value: float,
     min_width: float = MIN_LINE_WIDTH,
-    max_width: float = MAX_LINE_WIDTH,
+    max_width: float = DEFAULT_MAX_LINE_WIDTH,
 ) -> float:
     if max_value == min_value:
         return 0.5 * (min_width + max_width)
@@ -273,6 +277,7 @@ def _period_label(period_code: str) -> str:
 def main() -> None:
     args = parse_args()
     cfg = get_agency_config(args.agency)
+    max_line_width = AGENCY_MAX_LINE_WIDTH.get(cfg.agency_id, DEFAULT_MAX_LINE_WIDTH)
 
     if args.period:
         period_code = args.period
@@ -308,7 +313,7 @@ def main() -> None:
 
     ordered_segments = segments.sort_values("riders_weekday", ascending=True).reset_index(drop=True)
     widths = [
-        width_for_value(value, RIDERS_SCALE_MIN, RIDERS_SCALE_MAX)
+        width_for_value(value, RIDERS_SCALE_MIN, RIDERS_SCALE_MAX, max_width=max_line_width)
         for value in ordered_segments["riders_weekday"].to_list()
     ]
 
@@ -364,6 +369,47 @@ def main() -> None:
         zorder=3,
     )
 
+    if cfg.agency_id == "bart":
+        labeled_stations = stations[stations["weekday_station_ridership"] > 0].copy()
+        for station in labeled_stations.itertuples(index=False):
+            station_name = str(station.station_name).strip().lower()
+            label_offset = (8, -8) if station_name in {
+                "balboa park",
+                "daly city",
+                "rockridge",
+                "orinda",
+                "lafayette",
+                "pleasant hill / contra costa centre",
+            } else (8, -4) if station_name in {
+                "12th street / oakland city center",
+                "19th street oakland",
+                "lake merritt",
+            } else (5, -9) if station_name in {
+                "castro valley",
+                "west dublin / pleasanton"
+            } else (8, -8) if station_name in {
+                "oakland international airport station",
+            } else (8, -8) if station_name in {
+                "embarcardero",
+                "embarcadero",
+                "glen park",
+                "civic center / un plaza",
+                "montgomery street",
+                "powell street",
+            } else (6, 2)
+            ax.annotate(
+                f"{station.weekday_station_ridership:,.0f}",
+                (station.stop_lon, station.stop_lat),
+                xytext=label_offset,
+                textcoords="offset points",
+                fontsize=5.8,
+                color="#17314b",
+                ha="left",
+                va="bottom",
+                path_effects=[pe.withStroke(linewidth=1.5, foreground="#f7f7f5")],
+                zorder=4,
+            )
+
     ax.set_title(
         f"{cfg.display_name} Weekday Rider Flow on GTFS Shapes\n"
         f"(Edge width = modeled weekday OD riders per segment, {period_label})",
@@ -415,7 +461,7 @@ def main() -> None:
         x_left = x_start + (x_end - x_start) * fraction_left
         x_right = x_start + (x_end - x_start) * fraction_right
         riders_mid = min_riders + (max_riders - min_riders) * (fraction_left + fraction_right) * 0.5
-        linewidth = width_for_value(riders_mid, min_riders, max_riders)
+        linewidth = width_for_value(riders_mid, min_riders, max_riders, max_width=max_line_width)
         legend_ax.plot([x_left, x_right], [y_center, y_center], color=line_color, linewidth=linewidth, solid_capstyle="round")
 
     label_fractions = [0.0, 0.25, 0.5, 0.75, 1.0]
