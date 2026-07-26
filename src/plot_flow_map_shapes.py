@@ -1,14 +1,17 @@
-from pathlib import Path
+import argparse
 
 import matplotlib.pyplot as plt
 
+from agency_config import get_agency_config
 from gtfs.loader import GTFSFeed
 
-
-GTFS_DIR = Path("data/bart/gtfs/current")
-OUTPUT_DIR = Path("output/bart")
-LINE_COLOR = "#1d3557"
 LINE_ALPHA = 1.0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Render a base map from GTFS shapes with traversal thickness.")
+    parser.add_argument("--agency", default="bart", help="Agency id from agency_config.py")
+    return parser.parse_args()
 
 
 def width_scale(values, min_width: float = 0.8, max_width: float = 8.0):
@@ -25,8 +28,11 @@ def width_scale(values, min_width: float = 0.8, max_width: float = 8.0):
 
 
 def main() -> None:
-    feed = GTFSFeed(GTFS_DIR)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    args = parse_args()
+    cfg = get_agency_config(args.agency)
+
+    feed = GTFSFeed(cfg.gtfs_dir)
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     shapes = feed.shapes[["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence"]].copy()
     shape_counts = feed.shape_traversal_counts().copy()
@@ -47,7 +53,7 @@ def main() -> None:
         ax.plot(
             shape_points["shape_pt_lon"],
             shape_points["shape_pt_lat"],
-            color=LINE_COLOR,
+            color=cfg.line_color,
             linewidth=width_lookup[shape.shape_id],
             alpha=LINE_ALPHA,
             solid_capstyle="round",
@@ -59,19 +65,23 @@ def main() -> None:
         stations["stop_lat"],
         s=9,
         color="#f1faee",
-        edgecolor=LINE_COLOR,
+        edgecolor=cfg.line_color,
         linewidth=0.5,
         zorder=3,
     )
 
-    ax.set_title("BART Shape-Based Flow Prototype\n(Edge width = scheduled traversals by shape)", fontsize=15, pad=14)
+    ax.set_title(
+        f"{cfg.display_name} Shape-Based Flow Prototype\n(Edge width = scheduled traversals by shape)",
+        fontsize=15,
+        pad=14,
+    )
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
 
     ax.grid(True, color="#d9d9d6", linewidth=0.5, alpha=0.35)
     ax.set_aspect("equal", adjustable="datalim")
 
-    output_path = OUTPUT_DIR / "flow_map_shapes_traversal.png"
+    output_path = cfg.output_dir / "flow_map_shapes_traversal.png"
     plt.tight_layout()
     plt.savefig(output_path)
 

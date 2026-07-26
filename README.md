@@ -23,6 +23,7 @@ Core scripts now read defaults from `src/agency_config.py`.
 
 Current generic scripts (still BART-compatible):
 
+- `src/build_edge_table.py --agency <agency_id>`
 - `src/assign_bart_od_to_edges.py --agency <agency_id>`
 - `src/plot_flow_map_weekday_riders_shapes.py --agency <agency_id>`
 
@@ -37,13 +38,19 @@ These scripts can also accept explicit input paths if needed.
 ## Build station edge tables
 
 ```bash
-./.venv/bin/python src/build_edge_table.py
+./.venv/bin/python src/build_edge_table.py --agency bart
 ```
 
 This writes:
 
 - `output/bart/trip_station_pairs.csv`: directional station-to-station traversals by trip
 - `output/bart/physical_edges.csv`: de-duplicated physical station pairs with traversal counts
+
+For another agency, pass its id in config:
+
+```bash
+./.venv/bin/python src/build_edge_table.py --agency caltrain
+```
 
 ## Render a first flow map
 
@@ -117,3 +124,130 @@ This writes:
 2. Confirm stop sequence semantics.
 3. Derive station-level groupings from platform stops.
 4. Build adjacent station pairs for graph construction.
+
+## Caltrain quick start
+
+The repository now includes a `caltrain` entry in `src/agency_config.py`.
+
+To run the same flow-map pipeline for Caltrain:
+
+1. Download latest Caltrain GTFS and latest published ridership tables:
+
+```bash
+./.venv/bin/python src/download_caltrain_inputs.py
+```
+
+This writes:
+
+- `data/caltrain/gtfs/current/*.txt` from the latest GTFS zip
+- `data/caltrain/ridership/monthly/ridership_summary_YYYYMM.csv` with latest total and average weekday ridership
+- raw/exported Tableau ridership tables under `data/caltrain/ridership/monthly/`
+
+Optional:
+
+- GTFS only: `./.venv/bin/python src/download_caltrain_inputs.py --gtfs-only`
+- Ridership only: `./.venv/bin/python src/download_caltrain_inputs.py --ridership-only`
+
+2. Parse Caltrain OD input to OD long format:
+
+```bash
+./.venv/bin/python src/parse_caltrain_ridership_monthly.py --input data/caltrain/ridership/monthly/YOUR_FILE.csv --period 202606
+```
+
+Default expected columns are:
+
+- `origin_station_name`
+- `destination_station_name`
+- `average_weekday_riders`
+
+If your source file uses different names, pass `--origin-column`, `--destination-column`, and `--riders-column`.
+
+Optional station-code lookup:
+
+- Put `station_codes.csv` in `data/caltrain/ridership/reference/`
+- Required columns: `station_name`, `station_code`
+- If no lookup is present, synthetic codes (`CT001`, `CT002`, ...) are generated automatically.
+
+3. Build physical edges:
+
+```bash
+./.venv/bin/python src/build_edge_table.py --agency caltrain
+```
+
+4. Assign weekday OD riders to edges:
+
+```bash
+./.venv/bin/python src/assign_bart_od_to_edges.py --agency caltrain
+```
+
+5. Render shape-based rider map:
+
+```bash
+PYTHONPATH=src ./.venv/bin/python src/plot_flow_map_weekday_riders_shapes.py --agency caltrain
+```
+
+Expected Caltrain outputs:
+
+- `output/caltrain/ridership/od_long_YYYYMM.csv`
+- `output/caltrain/physical_edges.csv`
+- `output/caltrain/ridership/edge_riders_weekday_YYYYMM.csv`
+- `output/caltrain/flow_map_weekday_riders_shapes.png`
+
+## MTA NYC Subway quick start
+
+The repository now includes an `mta_subway` entry in `src/agency_config.py`.
+
+To run the same flow-map pipeline for MTA NYC Subway:
+
+1. Download latest MTA Subway GTFS and latest available monthly OD extract:
+
+```bash
+./.venv/bin/python src/download_mta_subway_inputs.py
+```
+
+This writes:
+
+- `data/mta_subway/gtfs/current/*.txt`
+- `data/mta_subway/ridership/monthly/mta_subway_od_raw_YYYYMM.csv`
+- `data/mta_subway/ridership/monthly/ridership_summary_YYYYMM.csv`
+
+Optional:
+
+- GTFS only: `./.venv/bin/python src/download_mta_subway_inputs.py --gtfs-only`
+- Ridership only: `./.venv/bin/python src/download_mta_subway_inputs.py --ridership-only`
+
+2. Parse monthly MTA OD estimate into `od_long_YYYYMM.csv`:
+
+```bash
+./.venv/bin/python src/parse_mta_subway_od_monthly.py
+```
+
+Notes:
+
+- Output includes `average_weekday`, `average_saturday`, and `average_sunday` rows.
+- The source is an official modeled OD estimate (not direct tap-out observations).
+
+3. Build physical edges:
+
+```bash
+./.venv/bin/python src/build_edge_table.py --agency mta_subway
+```
+
+4. Assign weekday OD riders to edges:
+
+```bash
+./.venv/bin/python src/assign_bart_od_to_edges.py --agency mta_subway
+```
+
+5. Render shape-based rider map:
+
+```bash
+PYTHONPATH=src ./.venv/bin/python src/plot_flow_map_weekday_riders_shapes.py --agency mta_subway
+```
+
+Expected MTA outputs:
+
+- `output/mta_subway/ridership/od_long_YYYYMM.csv`
+- `output/mta_subway/physical_edges.csv`
+- `output/mta_subway/ridership/edge_riders_weekday_YYYYMM.csv`
+- `output/mta_subway/flow_map_weekday_riders_shapes.png`

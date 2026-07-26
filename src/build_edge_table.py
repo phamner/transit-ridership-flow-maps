@@ -1,21 +1,27 @@
-from pathlib import Path
+import argparse
 
+from agency_config import get_agency_config
 from gtfs.loader import GTFSFeed
 
 
-GTFS_DIR = Path("data/bart/gtfs/current")
-OUTPUT_DIR = Path("output/bart")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build trip station-pair and physical-edge tables from GTFS.")
+    parser.add_argument("--agency", default="bart", help="Agency id from agency_config.py")
+    return parser.parse_args()
 
 
 def main() -> None:
-    feed = GTFSFeed(GTFS_DIR)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    args = parse_args()
+    cfg = get_agency_config(args.agency)
+
+    feed = GTFSFeed(cfg.gtfs_dir)
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     station_pairs = feed.all_trip_station_pairs()
     physical_edges = feed.physical_edge_table()
 
-    station_pairs_path = OUTPUT_DIR / "trip_station_pairs.csv"
-    physical_edges_path = OUTPUT_DIR / "physical_edges.csv"
+    station_pairs_path = cfg.output_dir / "trip_station_pairs.csv"
+    physical_edges_path = cfg.output_dir / "physical_edges.csv"
 
     station_pairs.to_csv(station_pairs_path, index=False)
     physical_edges.to_csv(physical_edges_path, index=False)

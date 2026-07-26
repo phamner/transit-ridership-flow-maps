@@ -38,6 +38,30 @@ AGENCY_CONFIGS: dict[str, AgencyConfig] = {
             "warmsprings": "warmspringssouthfremont",
         },
     ),
+    "caltrain": AgencyConfig(
+        agency_id="caltrain",
+        display_name="Caltrain",
+        gtfs_dir=Path("data/caltrain/gtfs/current"),
+        output_dir=Path("output/caltrain"),
+        ridership_output_dir=Path("output/caltrain/ridership"),
+        ridership_monthly_dir=Path("data/caltrain/ridership/monthly"),
+        ridership_reference_dir=Path("data/caltrain/ridership/reference"),
+        line_color="#c8102e",
+        od_name_aliases={},
+    ),
+    "mta_subway": AgencyConfig(
+        agency_id="mta_subway",
+        display_name="MTA NYC Subway",
+        gtfs_dir=Path("data/mta_subway/gtfs/current"),
+        output_dir=Path("output/mta_subway"),
+        ridership_output_dir=Path("output/mta_subway/ridership"),
+        ridership_monthly_dir=Path("data/mta_subway/ridership/monthly"),
+        ridership_reference_dir=Path("data/mta_subway/ridership/reference"),
+        line_color="#0039a6",
+        od_name_aliases={
+            "lexingtonav5153sts": "lexingtonav53st",
+        },
+    ),
 }
 
 

@@ -15,7 +15,7 @@ LINE_ALPHA = 1.0
 RIDERS_SCALE_MIN = 0.0
 RIDERS_SCALE_MAX = 150000.0
 MIN_LINE_WIDTH = 0.9
-MAX_LINE_WIDTH = 18.0
+MAX_LINE_WIDTH = 12.0
 
 
 def width_scale(values, min_width: float = MIN_LINE_WIDTH, max_width: float = MAX_LINE_WIDTH):
@@ -363,46 +363,6 @@ def main() -> None:
         linewidth=0.8,
         zorder=3,
     )
-
-    labeled_stations = stations[stations["weekday_station_ridership"] > 0].copy()
-    for station in labeled_stations.itertuples(index=False):
-        station_name = str(station.station_name).strip().lower()
-        label_offset = (8, -8) if station_name in {
-            "balboa park",
-            "daly city",
-            "rockridge",
-            "orinda",
-            "lafayette",
-            "pleasant hill / contra costa centre",
-        } else (8, -4) if station_name in {
-            "12th street / oakland city center",
-            "19th street oakland",
-            "lake merritt",
-        } else (5, -9) if station_name in {
-            "castro valley",
-            "west dublin / pleasanton"
-        } else (8, -8) if station_name in {
-            "oakland international airport station",
-        } else (8, -8) if station_name in {
-            "embarcardero",
-            "embarcadero",
-            "glen park",
-            "civic center / un plaza",
-            "montgomery street",
-            "powell street",
-        } else (6, 2)
-        ax.annotate(
-            f"{station.weekday_station_ridership:,.0f}",
-            (station.stop_lon, station.stop_lat),
-            xytext=label_offset,
-            textcoords="offset points",
-            fontsize=5.8,
-            color="#17314b",
-            ha="left",
-            va="bottom",
-            path_effects=[pe.withStroke(linewidth=1.5, foreground="#f7f7f5")],
-            zorder=4,
-        )
 
     ax.set_title(
         f"{cfg.display_name} Weekday Rider Flow on GTFS Shapes\n"

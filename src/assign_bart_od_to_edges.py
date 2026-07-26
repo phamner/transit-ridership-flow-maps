@@ -70,29 +70,34 @@ def build_station_crosswalk(od_long: pd.DataFrame, stations: pd.DataFrame, od_na
     for row in od_lookup.itertuples(index=False):
         od_norm = normalize_name(row.od_station_name)
 
-        if od_norm in station_index:
-            station_id, station_name = station_index[od_norm]
-            mappings.append(
-                {
-                    "od_station_code": row.od_station_code,
-                    "od_station_name": row.od_station_name,
-                    "gtfs_station_id": station_id,
-                    "gtfs_station_name": station_name,
-                    "match_method": "normalized_exact",
-                }
-            )
-            continue
+        match_method = None
+        matched_name = None
 
-        alias_norm = od_name_aliases.get(od_norm)
-        if alias_norm and alias_norm in station_index:
-            station_id, station_name = station_index[alias_norm]
+        if od_norm in station_index:
+            matched_name = od_norm
+            match_method = "normalized_exact"
+        else:
+            alias_norm = od_name_aliases.get(od_norm)
+            if alias_norm and alias_norm in station_index:
+                matched_name = alias_norm
+                match_method = "alias"
+            else:
+                for component in re.split(r"/", str(row.od_station_name)):
+                    component_norm = normalize_name(component)
+                    if component_norm in station_index:
+                        matched_name = component_norm
+                        match_method = "component"
+                        break
+
+        if matched_name:
+            station_id, station_name = station_index[matched_name]
             mappings.append(
                 {
                     "od_station_code": row.od_station_code,
                     "od_station_name": row.od_station_name,
                     "gtfs_station_id": station_id,
                     "gtfs_station_name": station_name,
-                    "match_method": "alias",
+                    "match_method": match_method,
                 }
             )
             continue
@@ -132,6 +137,7 @@ def assign_weekday_od_to_edges(
     od_long: pd.DataFrame,
     crosswalk: pd.DataFrame,
     physical_edges: pd.DataFrame,
+    gtfs_transfers: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     weekday_od = od_long[od_long["day_type"] == TARGET_DAY_TYPE].copy()
     weekday_od = weekday_od[~weekday_od["is_intrastation"]].copy()
@@ -153,9 +159,20 @@ def assign_weekday_od_to_edges(
         raise ValueError("Found unmapped weekday OD pairs after crosswalk join.")
 
     adjacency: dict[str, set[str]] = {}
+    physical_edge_keys: set[tuple[str, str]] = set()
     for edge in physical_edges.itertuples(index=False):
         adjacency.setdefault(edge.station_a_id, set()).add(edge.station_b_id)
         adjacency.setdefault(edge.station_b_id, set()).add(edge.station_a_id)
+        physical_edge_keys.add(tuple(sorted((str(edge.station_a_id), str(edge.station_b_id)))))
+
+    if gtfs_transfers is not None and not gtfs_transfers.empty:
+        transfer_pairs = gtfs_transfers[["from_station_id", "to_station_id"]].dropna().copy()
+        transfer_pairs["from_station_id"] = transfer_pairs["from_station_id"].astype(str)
+        transfer_pairs["to_station_id"] = transfer_pairs["to_station_id"].astype(str)
+
+        for row in transfer_pairs.itertuples(index=False):
+            adjacency.setdefault(row.from_station_id, set()).add(row.to_station_id)
+            adjacency.setdefault(row.to_station_id, set()).add(row.from_station_id)
 
     edge_rider_totals: dict[tuple[str, str], float] = {}
     route_rows = []
@@ -174,7 +191,8 @@ def assign_weekday_od_to_edges(
         hops = list(zip(path_nodes[:-1], path_nodes[1:]))
         for a, b in hops:
             key = tuple(sorted((a, b)))
-            edge_rider_totals[key] = edge_rider_totals.get(key, 0.0) + riders
+            if key in physical_edge_keys:
+                edge_rider_totals[key] = edge_rider_totals.get(key, 0.0) + riders
 
         route_rows.append(
             {
@@ -190,7 +208,7 @@ def assign_weekday_od_to_edges(
 
     if unroutable:
         examples = ", ".join([f"{o}->{d}" for o, d in unroutable[:10]])
-        raise ValueError(f"Unroutable OD pairs found ({len(unroutable)}). Examples: {examples}")
+        print(f"Warning: unroutable OD pairs found ({len(unroutable)}). Examples: {examples}")
 
     edge_flow = physical_edges.copy()
     edge_flow["riders_weekday"] = edge_flow.apply(
@@ -231,10 +249,33 @@ def main() -> None:
 
     od_long = pd.read_csv(od_long_path)
     physical_edges = pd.read_csv(physical_edges_path)
+    transfers_path = cfg.gtfs_dir / "transfers.txt"
+    gtfs_transfers = None
+    if transfers_path.exists():
+        transfers_raw = pd.read_csv(transfers_path)
+        stop_map = pd.read_csv(gtfs_stops_path)[["stop_id", "parent_station"]].copy()
+        stop_map["station_id"] = stop_map["parent_station"].where(
+            stop_map["parent_station"].notna() & (stop_map["parent_station"].astype(str) != ""),
+            stop_map["stop_id"],
+        )
+        stop_map = stop_map[["stop_id", "station_id"]].drop_duplicates()
+        gtfs_transfers = (
+            transfers_raw.merge(stop_map, left_on="from_stop_id", right_on="stop_id", how="left")
+            .rename(columns={"station_id": "from_station_id"})
+            .drop(columns=["stop_id"])
+            .merge(stop_map, left_on="to_stop_id", right_on="stop_id", how="left")
+            .rename(columns={"station_id": "to_station_id"})
+            .drop(columns=["stop_id"])
+        )
     stations = load_gtfs_stations(gtfs_stops_path)
 
     crosswalk = build_station_crosswalk(od_long, stations, cfg.od_name_aliases)
-    edge_flow, routed_pairs = assign_weekday_od_to_edges(od_long, crosswalk, physical_edges)
+    edge_flow, routed_pairs = assign_weekday_od_to_edges(
+        od_long,
+        crosswalk,
+        physical_edges,
+        gtfs_transfers=gtfs_transfers,
+    )
 
     period_candidates = sorted(set(od_long["period"].astype(str)))
     period = period_candidates[0] if period_candidates else detected_period
