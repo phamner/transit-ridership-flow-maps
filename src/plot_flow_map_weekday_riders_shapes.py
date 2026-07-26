@@ -317,6 +317,30 @@ def main() -> None:
         zorder=3,
     )
 
+    rotate_45_station_names = {
+        "embarcardero",
+        "embarcadero",
+        "civic center / un plaza",
+        "montgomery street",
+        "powell street",
+    }
+    labeled_stations = stations[stations["weekday_station_ridership"] > 0].copy()
+    for station in labeled_stations.itertuples(index=False):
+        station_name = str(station.station_name).strip().lower()
+        label_rotation = 45 if station_name in rotate_45_station_names else 0
+        ax.annotate(
+            f"{station.weekday_station_ridership:,.0f}",
+            (station.stop_lon, station.stop_lat),
+            xytext=(3, 2),
+            textcoords="offset points",
+            fontsize=5.8,
+            color="#17314b",
+            rotation=label_rotation,
+            rotation_mode="anchor",
+            bbox={"boxstyle": "round,pad=0.12", "fc": "#f7f7f5", "ec": "none", "alpha": 0.75},
+            zorder=4,
+        )
+
     ax.set_title("BART Weekday Rider Flow on GTFS Shapes\n(Edge width = assigned weekday riders)", fontsize=15, pad=14)
     ax.set_aspect("equal", adjustable="datalim")
     ax.margins(x=0.02, y=0.02)
