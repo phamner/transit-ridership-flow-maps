@@ -513,8 +513,8 @@ def main() -> None:
 
     min_riders = RIDERS_SCALE_MIN
     max_riders = RIDERS_SCALE_MAX
-
-    legend_ax = ax.inset_axes([0.03, 0.03, 0.38, 0.24])
+    legend_position = [0.01, 0.73, 0.38, 0.24] if manhattan_only else [0.03, 0.03, 0.38, 0.24]
+    legend_ax = ax.inset_axes(legend_position)
     legend_ax.set_facecolor((0.97, 0.97, 0.96, 0.96))
     legend_ax.set_xlim(0, 1)
     legend_ax.set_ylim(0, 1)
