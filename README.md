@@ -6,15 +6,15 @@ Open-source transit analysis pipeline for producing Subway Builder-style ridersh
 
 ### BART
 
-![BART weekday rider flow map](output/bart/flow_map_weekday_riders_shapes.png)
+![BART weekday rider flow map](docs/maps/bart_flow_map_weekday_riders_shapes.png)
 
 ### MTA NYC Subway (full network)
 
-![MTA NYC Subway weekday rider flow map](output/mta_subway/flow_map_weekday_riders_shapes.png)
+![MTA NYC Subway weekday rider flow map](docs/maps/mta_subway_flow_map_weekday_riders_shapes.png)
 
 ### MTA NYC Subway (Manhattan only)
 
-![MTA NYC Subway Manhattan weekday rider flow map](output/mta_subway/flow_map_weekday_riders_shapes_manhattan.png)
+![MTA NYC Subway Manhattan weekday rider flow map](docs/maps/mta_subway_flow_map_weekday_riders_shapes_manhattan.png)
 
 ## Current focus
 
