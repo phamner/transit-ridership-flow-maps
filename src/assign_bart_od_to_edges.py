@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import re
 import unicodedata
 from collections import deque
@@ -7,24 +8,9 @@ from pathlib import Path
 
 import pandas as pd
 
-
-OD_LONG_PATH = Path("output/bart/ridership/od_long_202606.csv")
-PHYSICAL_EDGES_PATH = Path("output/bart/physical_edges.csv")
-GTFS_STOPS_PATH = Path("data/bart/gtfs/current/stops.txt")
-OUTPUT_DIR = Path("output/bart/ridership")
+from agency_config import get_agency_config, latest_period_csv
 
 TARGET_DAY_TYPE = "average_weekday"
-
-# OD names occasionally use short labels while GTFS has the full station title.
-OD_NAME_ALIASES = {
-    "berkeley": "downtownberkeley",
-    "civiccenter": "civiccenterunplaza",
-    "millbrae": "millbraecaltraintransferplatform",
-    "northconcord": "northconcordmartinez",
-    "oaklandinternationalairport": "oaklandinternationalairportstation",
-    "pleasanthill": "pleasanthillcontracostacentre",
-    "warmsprings": "warmspringssouthfremont",
-}
 
 
 def normalize_name(name: str) -> str:
@@ -33,8 +19,8 @@ def normalize_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", ascii_name)
 
 
-def load_gtfs_stations() -> pd.DataFrame:
-    stops = pd.read_csv(GTFS_STOPS_PATH)
+def load_gtfs_stations(gtfs_stops_path: Path) -> pd.DataFrame:
+    stops = pd.read_csv(gtfs_stops_path)
     stops["station_id"] = stops["parent_station"].where(
         stops["parent_station"].notna() & (stops["parent_station"].astype(str) != ""),
         stops["stop_id"],
@@ -54,7 +40,7 @@ def load_gtfs_stations() -> pd.DataFrame:
     return stations
 
 
-def build_station_crosswalk(od_long: pd.DataFrame, stations: pd.DataFrame) -> pd.DataFrame:
+def build_station_crosswalk(od_long: pd.DataFrame, stations: pd.DataFrame, od_name_aliases: dict[str, str]) -> pd.DataFrame:
     od_lookup = (
         pd.concat(
             [
@@ -97,7 +83,7 @@ def build_station_crosswalk(od_long: pd.DataFrame, stations: pd.DataFrame) -> pd
             )
             continue
 
-        alias_norm = OD_NAME_ALIASES.get(od_norm)
+        alias_norm = od_name_aliases.get(od_norm)
         if alias_norm and alias_norm in station_index:
             station_id, station_name = station_index[alias_norm]
             mappings.append(
@@ -217,22 +203,47 @@ def assign_weekday_od_to_edges(
     return edge_flow, routes
 
 
-def main() -> None:
-    od_long = pd.read_csv(OD_LONG_PATH)
-    physical_edges = pd.read_csv(PHYSICAL_EDGES_PATH)
-    stations = load_gtfs_stations()
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Assign OD riders to physical station edges.")
+    parser.add_argument("--agency", default="bart", help="Agency id from agency_config.py")
+    parser.add_argument("--od-long", help="Optional path to od_long_YYYYMM.csv")
+    parser.add_argument("--physical-edges", help="Optional path to physical_edges.csv")
+    parser.add_argument("--output-dir", help="Optional output directory override")
+    return parser.parse_args()
 
-    crosswalk = build_station_crosswalk(od_long, stations)
+
+def main() -> None:
+    args = parse_args()
+    cfg = get_agency_config(args.agency)
+
+    od_long_path: Path
+    detected_period: str
+    if args.od_long:
+        od_long_path = Path(args.od_long)
+        period_matches = re.search(r"(\d{6})", od_long_path.name)
+        detected_period = period_matches.group(1) if period_matches else "unknown"
+    else:
+        od_long_path, detected_period = latest_period_csv(cfg.ridership_output_dir, "od_long")
+
+    physical_edges_path = Path(args.physical_edges) if args.physical_edges else (cfg.output_dir / "physical_edges.csv")
+    output_dir = Path(args.output_dir) if args.output_dir else cfg.ridership_output_dir
+    gtfs_stops_path = cfg.gtfs_dir / "stops.txt"
+
+    od_long = pd.read_csv(od_long_path)
+    physical_edges = pd.read_csv(physical_edges_path)
+    stations = load_gtfs_stations(gtfs_stops_path)
+
+    crosswalk = build_station_crosswalk(od_long, stations, cfg.od_name_aliases)
     edge_flow, routed_pairs = assign_weekday_od_to_edges(od_long, crosswalk, physical_edges)
 
     period_candidates = sorted(set(od_long["period"].astype(str)))
-    period = period_candidates[0] if period_candidates else "unknown"
+    period = period_candidates[0] if period_candidates else detected_period
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    crosswalk_path = OUTPUT_DIR / f"station_code_crosswalk_{period}.csv"
-    edge_flow_path = OUTPUT_DIR / f"edge_riders_weekday_{period}.csv"
-    routed_pairs_path = OUTPUT_DIR / f"od_routed_weekday_{period}.csv"
+    crosswalk_path = output_dir / f"station_code_crosswalk_{period}.csv"
+    edge_flow_path = output_dir / f"edge_riders_weekday_{period}.csv"
+    routed_pairs_path = output_dir / f"od_routed_weekday_{period}.csv"
 
     crosswalk.to_csv(crosswalk_path, index=False)
     edge_flow.to_csv(edge_flow_path, index=False)

@@ -1,24 +1,17 @@
 from __future__ import annotations
 
+import argparse
+import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 import pandas as pd
 
+from agency_config import get_agency_config, latest_period_csv
 from gtfs.loader import GTFSFeed
 
-
-GTFS_DIR = Path("data/bart/gtfs/current")
-EDGE_RIDERS_PATH = Path("output/bart/ridership/edge_riders_weekday_202606.csv")
-OD_LONG_PATH = Path("output/bart/ridership/od_long_202606.csv")
-STATION_CROSSWALK_PATH = Path("output/bart/ridership/station_code_crosswalk_202606.csv")
-OUTPUT_DIR = Path("output/bart")
-SEGMENT_OUTPUT_DIR = Path("output/bart/ridership")
-LINE_COLOR = "#0a82ca"
 LINE_ALPHA = 1.0
-OD_PERIOD_LABEL = "June 2026"
-OD_PERIOD_CODE = "202606"
 RIDERS_SCALE_MIN = 0.0
 RIDERS_SCALE_MAX = 150000.0
 MIN_LINE_WIDTH = 0.9
@@ -189,7 +182,13 @@ def slice_shape_geometry(shape_points: pd.DataFrame, start_idx: int, end_idx: in
     return selected
 
 
-def render_station_table_figure(station_table: pd.DataFrame) -> Path:
+def render_station_table_figure(
+    station_table: pd.DataFrame,
+    output_dir: Path,
+    period_code: str,
+    period_label: str,
+    agency_display_name: str,
+) -> Path:
     table_fig = plt.figure(figsize=(11, 18), dpi=300)
     table_ax = table_fig.add_axes([0.03, 0.03, 0.94, 0.9])
     table_ax.set_facecolor("#f7f7f5")
@@ -197,15 +196,15 @@ def render_station_table_figure(station_table: pd.DataFrame) -> Path:
     table_ax.axis("off")
 
     table_ax.set_title(
-        "BART station ridership\n"
-        f"Average weekday, {OD_PERIOD_LABEL}",
+        f"{agency_display_name} station activity\n"
+        f"Average weekday, {period_label}",
         fontsize=15,
         pad=18,
     )
     table_ax.text(
         0.0,
         1.0,
-        "Ranked from most to least riders. Values are average weekday riders per station.",
+        "Ranked from most to least station activity (boardings + alightings).",
         transform=table_ax.transAxes,
         fontsize=9.5,
         color="#3b4a59",
@@ -214,7 +213,7 @@ def render_station_table_figure(station_table: pd.DataFrame) -> Path:
 
     table = table_ax.table(
         cellText=station_table[["rank", "station_name", "weekday_station_ridership_formatted"]].values.tolist(),
-        colLabels=["#", "Station", "Average weekday riders"],
+        colLabels=["#", "Station", "Avg weekday activity (in + out)"],
         cellLoc="left",
         colLoc="left",
         colWidths=[0.10, 0.68, 0.22],
@@ -240,26 +239,67 @@ def render_station_table_figure(station_table: pd.DataFrame) -> Path:
         spine.set_edgecolor("#d9d9d6")
         spine.set_linewidth(0.8)
 
-    output_path = OUTPUT_DIR / f"station_ridership_weekday_table_{OD_PERIOD_CODE}.png"
+    output_path = output_dir / f"station_ridership_weekday_table_{period_code}.png"
     table_fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(table_fig)
     return output_path
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Render shape-based weekday rider flow map.")
+    parser.add_argument("--agency", default="bart", help="Agency id from agency_config.py")
+    parser.add_argument("--period", help="Period code to render, e.g. 202606")
+    parser.add_argument("--edge-riders", help="Optional path to edge_riders_weekday_YYYYMM.csv")
+    parser.add_argument("--od-long", help="Optional path to od_long_YYYYMM.csv")
+    parser.add_argument("--crosswalk", help="Optional path to station_code_crosswalk_YYYYMM.csv")
+    return parser.parse_args()
+
+
+def _period_label(period_code: str) -> str:
+    match = re.fullmatch(r"(\d{4})(\d{2})", period_code)
+    if not match:
+        return period_code
+    year = int(match.group(1))
+    month = int(match.group(2))
+    month_names = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+    if 1 <= month <= 12:
+        return f"{month_names[month - 1]} {year}"
+    return period_code
+
+
 def main() -> None:
-    feed = GTFSFeed(GTFS_DIR)
-    edge_riders = pd.read_csv(EDGE_RIDERS_PATH)
-    od_long = pd.read_csv(OD_LONG_PATH)
-    crosswalk = pd.read_csv(STATION_CROSSWALK_PATH)
+    args = parse_args()
+    cfg = get_agency_config(args.agency)
+
+    if args.period:
+        period_code = args.period
+        edge_riders_path = Path(args.edge_riders) if args.edge_riders else cfg.ridership_output_dir / f"edge_riders_weekday_{period_code}.csv"
+        od_long_path = Path(args.od_long) if args.od_long else cfg.ridership_output_dir / f"od_long_{period_code}.csv"
+        crosswalk_path = Path(args.crosswalk) if args.crosswalk else cfg.ridership_output_dir / f"station_code_crosswalk_{period_code}.csv"
+    else:
+        edge_riders_path, period_code = latest_period_csv(cfg.ridership_output_dir, "edge_riders_weekday")
+        od_long_path = Path(args.od_long) if args.od_long else cfg.ridership_output_dir / f"od_long_{period_code}.csv"
+        crosswalk_path = Path(args.crosswalk) if args.crosswalk else cfg.ridership_output_dir / f"station_code_crosswalk_{period_code}.csv"
+
+    line_color = cfg.line_color
+    period_label = _period_label(period_code)
+
+    feed = GTFSFeed(cfg.gtfs_dir)
+    edge_riders = pd.read_csv(edge_riders_path)
+    od_long = pd.read_csv(od_long_path)
+    crosswalk = pd.read_csv(crosswalk_path)
     stations = feed.stations()[["station_id", "station_name", "stop_lat", "stop_lon"]].copy()
     shapes = feed.shapes[["shape_id", "shape_pt_lat", "shape_pt_lon", "shape_pt_sequence"]].copy()
     station_totals = load_weekday_station_totals(od_long, crosswalk)
     stations = stations.merge(station_totals, on="station_id", how="left").fillna(0.0)
 
     segments = representative_shape_segments(feed, edge_riders, stations)
-    segment_output_path = SEGMENT_OUTPUT_DIR / "shape_segment_riders_weekday_202606.csv"
-    station_totals_output_path = SEGMENT_OUTPUT_DIR / "station_ridership_weekday_202606.csv"
-    SEGMENT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    segment_output_path = cfg.ridership_output_dir / f"shape_segment_riders_weekday_{period_code}.csv"
+    station_totals_output_path = cfg.ridership_output_dir / f"station_ridership_weekday_{period_code}.csv"
+    cfg.ridership_output_dir.mkdir(parents=True, exist_ok=True)
     segments.to_csv(segment_output_path, index=False)
     stations[["station_id", "station_name", "boardings", "alightings", "weekday_station_ridership"]].to_csv(
         station_totals_output_path,
@@ -280,7 +320,13 @@ def main() -> None:
     station_table.insert(0, "rank", station_table.index + 1)
     station_table["weekday_station_ridership_formatted"] = station_table["weekday_station_ridership"].map(lambda value: f"{value:,.0f}")
 
-    table_output_path = render_station_table_figure(station_table)
+    table_output_path = render_station_table_figure(
+        station_table,
+        output_dir=cfg.output_dir,
+        period_code=period_code,
+        period_label=period_label,
+        agency_display_name=cfg.display_name,
+    )
 
     fig, ax = plt.subplots(figsize=(13.5, 13.5), dpi=300)
 
@@ -301,7 +347,7 @@ def main() -> None:
         ax.plot(
             segment_points["shape_pt_lon"],
             segment_points["shape_pt_lat"],
-            color=LINE_COLOR,
+            color=line_color,
             linewidth=width,
             alpha=LINE_ALPHA,
             solid_capstyle="round",
@@ -313,7 +359,7 @@ def main() -> None:
         stations["stop_lat"],
         s=20,
         color="#f1faee",
-        edgecolor=LINE_COLOR,
+        edgecolor=line_color,
         linewidth=0.8,
         zorder=3,
     )
@@ -358,7 +404,12 @@ def main() -> None:
             zorder=4,
         )
 
-    ax.set_title("BART Weekday Rider Flow on GTFS Shapes\n(Edge width = assigned weekday riders)", fontsize=15, pad=14)
+    ax.set_title(
+        f"{cfg.display_name} Weekday Rider Flow on GTFS Shapes\n"
+        f"(Edge width = modeled weekday OD riders per segment, {period_label})",
+        fontsize=15,
+        pad=14,
+    )
 
     lon_min = float(shapes["shape_pt_lon"].min())
     lon_max = float(shapes["shape_pt_lon"].max())
@@ -390,7 +441,7 @@ def main() -> None:
         spine.set_linewidth(0.8)
 
     legend_ax.text(0.05, 0.9, "Ridership scale", fontsize=11.5, fontweight="bold", color="#10263b")
-    legend_ax.text(0.05, 0.79, "Average weekday riders per segment", fontsize=9.4, color="#3b4a59")
+    legend_ax.text(0.05, 0.79, "Modeled average weekday riders per segment", fontsize=9.4, color="#3b4a59")
 
     x_start = 0.07
     x_end = 0.80
@@ -405,7 +456,7 @@ def main() -> None:
         x_right = x_start + (x_end - x_start) * fraction_right
         riders_mid = min_riders + (max_riders - min_riders) * (fraction_left + fraction_right) * 0.5
         linewidth = width_for_value(riders_mid, min_riders, max_riders)
-        legend_ax.plot([x_left, x_right], [y_center, y_center], color=LINE_COLOR, linewidth=linewidth, solid_capstyle="round")
+        legend_ax.plot([x_left, x_right], [y_center, y_center], color=line_color, linewidth=linewidth, solid_capstyle="round")
 
     label_fractions = [0.0, 0.25, 0.5, 0.75, 1.0]
     for fraction in label_fractions:
@@ -423,11 +474,18 @@ def main() -> None:
         )
 
     legend_ax.text(0.05, 0.11, "From 0 to 150k riders", fontsize=8.6, color="#526273")
+    legend_ax.text(
+        0.05,
+        0.04,
+        "Station table uses activity = boardings + alightings (double-counts trips by design).",
+        fontsize=7.2,
+        color="#526273",
+    )
 
     fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.94)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = OUTPUT_DIR / "flow_map_weekday_riders_shapes.png"
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = cfg.output_dir / "flow_map_weekday_riders_shapes.png"
     plt.savefig(output_path, dpi=300)
     plt.close(fig)
 

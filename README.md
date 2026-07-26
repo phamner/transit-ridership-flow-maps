@@ -4,13 +4,29 @@ Open-source transit analysis pipeline for producing Subway Builder-style ridersh
 
 ## Current focus
 
-The first milestone is a clean GTFS inspection layer for BART that can later be generalized to other agencies.
+The first milestone is a clean GTFS inspection layer for BART. The pipeline is now agency-config driven so the same scripts can be reused for additional transit systems.
 
 This repository currently includes:
 
 - a lightweight GTFS feed loader
 - a script that inspects stops, trips, and station aggregation
 - the BART GTFS feed under `data/bart/gtfs/current/`
+- shared agency config in `src/agency_config.py`
+
+## Multi-agency structure
+
+Core scripts now read defaults from `src/agency_config.py`.
+
+- Add a new agency by adding one entry to `AGENCY_CONFIGS`
+- Point that entry to the agency's GTFS and output directories
+- Add any OD station-name aliases needed for crosswalk matching
+
+Current generic scripts (still BART-compatible):
+
+- `src/assign_bart_od_to_edges.py --agency <agency_id>`
+- `src/plot_flow_map_weekday_riders_shapes.py --agency <agency_id>`
+
+These scripts can also accept explicit input paths if needed.
 
 ## Run the inspection script
 
@@ -67,7 +83,7 @@ This writes `output/bart/ridership/od_long_YYYYMM.csv` with one row per origin/d
 ## Assign weekday OD riders to edges
 
 ```bash
-./.venv/bin/python src/assign_bart_od_to_edges.py
+./.venv/bin/python src/assign_bart_od_to_edges.py --agency bart
 ```
 
 This writes:
@@ -87,7 +103,7 @@ This writes `output/bart/flow_map_weekday_riders.png` with edge width scaled by 
 ## Render weekday rider flow on GTFS shapes
 
 ```bash
-./.venv/bin/python src/plot_flow_map_weekday_riders_shapes.py
+PYTHONPATH=src ./.venv/bin/python src/plot_flow_map_weekday_riders_shapes.py --agency bart
 ```
 
 This writes:
