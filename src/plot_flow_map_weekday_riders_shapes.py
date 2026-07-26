@@ -22,7 +22,7 @@ AGENCY_MAX_LINE_WIDTH = {
 }
 
 AGENCY_MANHATTAN_MAX_LINE_WIDTH = {
-    "mta_subway": 4.5,
+    "mta_subway": 10.0,
 }
 
 MANHATTAN_BOUNDS = {

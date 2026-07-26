@@ -2,6 +2,20 @@
 
 Open-source transit analysis pipeline for producing Subway Builder-style ridership flow maps from public GTFS and OD data.
 
+## Current maps
+
+### BART
+
+![BART weekday rider flow map](output/bart/flow_map_weekday_riders_shapes.png)
+
+### MTA NYC Subway (full network)
+
+![MTA NYC Subway weekday rider flow map](output/mta_subway/flow_map_weekday_riders_shapes.png)
+
+### MTA NYC Subway (Manhattan only)
+
+![MTA NYC Subway Manhattan weekday rider flow map](output/mta_subway/flow_map_weekday_riders_shapes_manhattan.png)
+
 ## Current focus
 
 The first milestone is a clean GTFS inspection layer for BART. The pipeline is now agency-config driven so the same scripts can be reused for additional transit systems.
