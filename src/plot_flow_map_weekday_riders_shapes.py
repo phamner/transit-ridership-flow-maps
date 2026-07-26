@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 import pandas as pd
 
 from gtfs.loader import GTFSFeed
@@ -317,27 +318,43 @@ def main() -> None:
         zorder=3,
     )
 
-    rotate_45_station_names = {
-        "embarcardero",
-        "embarcadero",
-        "civic center / un plaza",
-        "montgomery street",
-        "powell street",
-    }
     labeled_stations = stations[stations["weekday_station_ridership"] > 0].copy()
     for station in labeled_stations.itertuples(index=False):
         station_name = str(station.station_name).strip().lower()
-        label_rotation = 45 if station_name in rotate_45_station_names else 0
+        label_offset = (8, -8) if station_name in {
+            "balboa park",
+            "daly city",
+            "rockridge",
+            "orinda",
+            "lafayette",
+            "pleasant hill / contra costa centre",
+        } else (8, -4) if station_name in {
+            "12th street / oakland city center",
+            "19th street oakland",
+            "lake merritt",
+        } else (5, -9) if station_name in {
+            "castro valley",
+            "west dublin / pleasanton"
+        } else (8, -8) if station_name in {
+            "oakland international airport station",
+        } else (8, -8) if station_name in {
+            "embarcardero",
+            "embarcadero",
+            "glen park",
+            "civic center / un plaza",
+            "montgomery street",
+            "powell street",
+        } else (6, 2)
         ax.annotate(
             f"{station.weekday_station_ridership:,.0f}",
             (station.stop_lon, station.stop_lat),
-            xytext=(3, 2),
+            xytext=label_offset,
             textcoords="offset points",
             fontsize=5.8,
             color="#17314b",
-            rotation=label_rotation,
-            rotation_mode="anchor",
-            bbox={"boxstyle": "round,pad=0.12", "fc": "#f7f7f5", "ec": "none", "alpha": 0.75},
+            ha="left",
+            va="bottom",
+            path_effects=[pe.withStroke(linewidth=1.5, foreground="#f7f7f5")],
             zorder=4,
         )
 
